@@ -12,6 +12,8 @@ jobs:
     env:
       # Node.js 24 で JavaScript actions を実行（非推奨警告の回避）
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      DISCORD_WEBHOOK_URL_ANTHROPIC: ${{ secrets.DISCORD_WEBHOOK_URL_ANTHROPIC }}
+      DISCORD_WEBHOOK_URL_OPENAI: ${{ secrets.DISCORD_WEBHOOK_URL_OPENAI }}
     steps:
       - uses: actions/checkout@v6
 
@@ -27,9 +29,18 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Verify Discord webhook secrets
+        run: |
+          missing=""
+          [ -z "$DISCORD_WEBHOOK_URL_ANTHROPIC" ] && missing="$missing DISCORD_WEBHOOK_URL_ANTHROPIC"
+          [ -z "$DISCORD_WEBHOOK_URL_OPENAI" ] && missing="$missing DISCORD_WEBHOOK_URL_OPENAI"
+          if [ -n "$missing" ]; then
+            echo "GitHub Secrets が未設定です:$missing"
+            echo "Settings → Secrets and variables → Actions で登録してください。"
+            exit 1
+          fi
+
       - name: Check feeds and notify Discord
         env:
-          DISCORD_WEBHOOK_URL_ANTHROPIC: ${{ secrets.DISCORD_WEBHOOK_URL_ANTHROPIC }}
-          DISCORD_WEBHOOK_URL_OPENAI: ${{ secrets.DISCORD_WEBHOOK_URL_OPENAI }}
           STATE_FILE: .state/last.json
         run: python scripts/check.py

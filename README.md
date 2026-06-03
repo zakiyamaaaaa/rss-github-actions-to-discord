@@ -27,7 +27,21 @@ RSS またはニュース一覧ページの更新を 1 日 1 回チェックし�
 
 新しい企業を追加するときは、Secret と `.github/workflows/check.yml` の `env` の両方に追記してください。
 
-### 3. 手動テスト（任意）
+### 3. 変更を GitHub に反映
+
+ローカルで編集しただけでは Actions は更新されません。必ず push してください。
+
+```bash
+cd /Users/shoichiyamazaki/development/rss-github-actions-to-discord
+git add -A
+git status   # check.yml と scripts/check.py が含まれること
+git commit -m "Update workflow and company webhooks"
+git push
+```
+
+GitHub 上の `scripts/check.py` に `DISCORD_WEBHOOK_URL が未設定` とあれば **古いコードが動いています**。push 後に再実行してください。
+
+### 4. 手動テスト（任意）
 
 Actions タブ → **Check site updates** → **Run workflow**
 
