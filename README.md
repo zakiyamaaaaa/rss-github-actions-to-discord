@@ -1,4 +1,4 @@
-# site-watch
+# rss-github-actions-to-discord
 
 RSS フィードの更新を 1 日 1 回チェックし、新着があれば Discord に通知します。
 
@@ -20,7 +20,7 @@ RSS フィードの更新を 1 日 1 回チェックし、新着があれば Dis
 ### 3. GitHub に push
 
 ```bash
-git remote add origin git@github.com:<YOUR_USER>/site-watch.git
+git remote add origin git@github.com:<YOUR_USER>/rss-github-actions-to-discord.git
 git push -u origin main
 ```
 
