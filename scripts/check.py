@@ -5,12 +5,15 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
+from urllib.parse import urljoin, urlparse
 
 import feedparser
 import requests
 import yaml
+from bs4 import BeautifulSoup
 
 ROOT = Path(__file__).resolve().parent.parent
 SITES_FILE = ROOT / "sites.yaml"
@@ -54,6 +57,10 @@ def load_sites() -> list[dict]:
         if not site.get("company"):
             print(f"company が未設定です: {site}", file=sys.stderr)
             sys.exit(1)
+        site_type = site.get("type", "rss")
+        if site_type not in {"rss", "page"}:
+            print(f"未対応の type です ({site_type}): {site}", file=sys.stderr)
+            sys.exit(1)
 
     return sites
 
@@ -71,7 +78,36 @@ def save_state(state: dict[str, str]) -> None:
         json.dump(state, f, ensure_ascii=False, indent=2)
 
 
-def latest_entry(feed_url: str) -> tuple[str, str, str]:
+def latest_entry_page(page_url: str) -> tuple[str, str, str]:
+    """ニュース一覧ページから最新記事を取得。"""
+    headers = {"User-Agent": "rss-github-actions-to-discord/1.0"}
+    resp = requests.get(page_url, headers=headers, timeout=30)
+    resp.raise_for_status()
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+    locale_prefix = ""
+    path = urlparse(page_url).path
+    match = re.match(r"^/([a-z]{2}-[A-Z]{2})/", path)
+    if match:
+        locale_prefix = f"/{match.group(1)}/"
+
+    seen: set[str] = set()
+    for anchor in soup.select('a[href*="/index/"]'):
+        href = urljoin(page_url, anchor["href"])
+        if href in seen:
+            continue
+        if locale_prefix and locale_prefix not in urlparse(href).path:
+            continue
+        title = re.sub(r"\s+", " ", anchor.get_text(strip=True))
+        if len(title) < 8:
+            continue
+        seen.add(href)
+        return href, title, href
+
+    raise RuntimeError(f"記事リンクを取得できません: {page_url}")
+
+
+def latest_entry_rss(feed_url: str) -> tuple[str, str, str]:
     """戻り値: (entry_id, title, link)"""
     parsed = feedparser.parse(feed_url)
     if parsed.bozo and not parsed.entries:
@@ -88,6 +124,14 @@ def latest_entry(feed_url: str) -> tuple[str, str, str]:
     title = entry.get("title", "(no title)")
     link = entry.get("link", feed_url)
     return str(entry_id), str(title), str(link)
+
+
+def latest_entry(site: dict) -> tuple[str, str, str]:
+    site_type = site.get("type", "rss")
+    url = site["url"]
+    if site_type == "page":
+        return latest_entry_page(url)
+    return latest_entry_rss(url)
 
 
 def notify_discord(webhook_url: str, name: str, title: str, link: str) -> None:
@@ -115,11 +159,11 @@ def main() -> None:
     for site in sites:
         company = site["company"]
         name = site["name"]
-        url = site["url"]
+        site_type = site.get("type", "rss")
         webhook_url = webhooks[company]
-        print(f"Checking: [{company}] {name}")
+        print(f"Checking: [{company}] {name} ({site_type})")
 
-        entry_id, title, link = latest_entry(url)
+        entry_id, title, link = latest_entry(site)
         previous = state.get(name)
 
         if previous is None:
