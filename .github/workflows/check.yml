@@ -26,6 +26,6 @@ jobs:
 
       - name: Check feeds and notify Discord
         env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_URL_ANTHROPIC: ${{ secrets.DISCORD_WEBHOOK_URL_ANTHROPIC }}
           STATE_FILE: .state/last.json
         run: python scripts/check.py

@@ -1,13 +1,13 @@
 # rss-github-actions-to-discord
 
-RSS フィードの更新を 1 日 1 回チェックし、新着があれば Discord に通知します。
+RSS フィードの更新を 1 日 1 回チェックし、新着があれば Discord に通知します。  
+企業（`company`）ごとに別チャンネルへ送る場合は、Webhook Secret も企業ごとに登録します。
 
 ## セットアップ
 
-### 1. Discord Webhook を作成
+### 1. Discord Webhook を作成（企業ごと）
 
-1. Discord の対象チャンネル → チャンネル設定 → 連携サービス → Webhook
-2. 新しい Webhook を作成し、URL をコピー
+例: Anthropic 用チャンネルに Webhook を作成し、URL をコピー。
 
 ### 2. GitHub Secret を登録
 
@@ -15,16 +15,18 @@ RSS フィードの更新を 1 日 1 回チェックし、新着があれば Dis
 
 | Name | Value |
 |------|-------|
-| `DISCORD_WEBHOOK_URL` | Discord Webhook の URL |
+| `DISCORD_WEBHOOK_URL_ANTHROPIC` | Anthropic 用 Discord Webhook の URL |
 
-### 3. GitHub に push
+命名規則: `DISCORD_WEBHOOK_URL_<COMPANY>`（`sites.yaml` の `company` を大文字にしたもの）
 
-```bash
-git remote add origin git@github.com:<YOUR_USER>/rss-github-actions-to-discord.git
-git push -u origin main
-```
+| company（sites.yaml） | Secret 名 |
+|----------------------|-----------|
+| `anthropic` | `DISCORD_WEBHOOK_URL_ANTHROPIC` |
+| `openai` | `DISCORD_WEBHOOK_URL_OPENAI` |
 
-### 4. 手動テスト（任意）
+新しい企業を追加するときは、Secret と `.github/workflows/check.yml` の `env` の両方に追記してください。
+
+### 3. 手動テスト（任意）
 
 Actions タブ → **Check site updates** → **Run workflow**
 
@@ -36,9 +38,16 @@ Actions タブ → **Check site updates** → **Run workflow**
 
 ```yaml
 sites:
-  - name: 表示名
+  - company: anthropic
+    name: 表示名
     url: https://example.com/feed.xml
 ```
+
+別企業を追加する場合:
+
+1. 上記のとおり `company` を指定
+2. GitHub Secret `DISCORD_WEBHOOK_URL_<COMPANY>` を追加
+3. `.github/workflows/check.yml` の `env` に同じ Secret を追加
 
 ## ローカル実行
 
@@ -46,7 +55,7 @@ sites:
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-export DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/..."
+export DISCORD_WEBHOOK_URL_ANTHROPIC="https://discord.com/api/webhooks/..."
 python scripts/check.py
 ```
 

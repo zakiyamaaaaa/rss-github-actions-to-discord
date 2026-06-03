@@ -1,11 +1,15 @@
-# 監視するフィード一覧。name は Discord 通知に表示されます。
+# 監視するフィード一覧。
+# company: GitHub Secret 名 DISCORD_WEBHOOK_URL_<COMPANY> に対応（例: anthropic → DISCORD_WEBHOOK_URL_ANTHROPIC）
 sites:
-  - name: Anthropic Engineering
+  - company: anthropic
+    name: Anthropic Engineering
     url: https://raw.githubusercontent.com/taobojlen/anthropic-rss-feed/main/anthropic_engineering_rss.xml
 
-  - name: Anthropic News
+  - company: anthropic
+    name: Anthropic News
     url: https://raw.githubusercontent.com/taobojlen/anthropic-rss-feed/main/anthropic_news_rss.xml
 
   # 追加例:
-  # - name: Example Blog
+  # - company: openai
+  #   name: OpenAI Blog
   #   url: https://example.com/feed.xml

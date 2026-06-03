@@ -17,6 +17,31 @@ SITES_FILE = ROOT / "sites.yaml"
 STATE_FILE = Path(os.environ.get("STATE_FILE", ROOT / ".state" / "last.json"))
 
 
+def webhook_env_key(company: str) -> str:
+    slug = company.strip().upper().replace("-", "_")
+    return f"DISCORD_WEBHOOK_URL_{slug}"
+
+
+def load_webhooks(sites: list[dict]) -> dict[str, str]:
+    companies = {site["company"] for site in sites}
+    webhooks: dict[str, str] = {}
+    missing: list[str] = []
+
+    for company in sorted(companies):
+        env_key = webhook_env_key(company)
+        url = os.environ.get(env_key, "").strip()
+        if not url:
+            missing.append(env_key)
+        else:
+            webhooks[company] = url
+
+    if missing:
+        print("未設定の Webhook Secret:", ", ".join(missing), file=sys.stderr)
+        sys.exit(1)
+
+    return webhooks
+
+
 def load_sites() -> list[dict]:
     with SITES_FILE.open(encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
@@ -24,6 +49,12 @@ def load_sites() -> list[dict]:
     if not sites:
         print("sites.yaml に監視対象がありません", file=sys.stderr)
         sys.exit(1)
+
+    for site in sites:
+        if not site.get("company"):
+            print(f"company が未設定です: {site}", file=sys.stderr)
+            sys.exit(1)
+
     return sites
 
 
@@ -75,20 +106,18 @@ def notify_discord(webhook_url: str, name: str, title: str, link: str) -> None:
 
 
 def main() -> None:
-    webhook_url = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
-    if not webhook_url:
-        print("DISCORD_WEBHOOK_URL が未設定です", file=sys.stderr)
-        sys.exit(1)
-
     sites = load_sites()
+    webhooks = load_webhooks(sites)
     state = load_state()
     updated = False
     notifications = 0
 
     for site in sites:
+        company = site["company"]
         name = site["name"]
         url = site["url"]
-        print(f"Checking: {name}")
+        webhook_url = webhooks[company]
+        print(f"Checking: [{company}] {name}")
 
         entry_id, title, link = latest_entry(url)
         previous = state.get(name)
