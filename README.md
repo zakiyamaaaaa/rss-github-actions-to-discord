@@ -31,14 +31,6 @@ RSS またはニュース一覧ページの更新を 1 日 1 回チェックし�
 
 ローカルで編集しただけでは Actions は更新されません。必ず push してください。
 
-```bash
-cd /Users/shoichiyamazaki/development/rss-github-actions-to-discord
-git add -A
-git status   # check.yml と scripts/check.py が含まれること
-git commit -m "Update workflow and company webhooks"
-git push
-```
-
 GitHub 上の `scripts/check.py` に `DISCORD_WEBHOOK_URL が未設定` とあれば **古いコードが動いています**。push 後に再実行してください。
 
 ### 4. 手動テスト（任意）
