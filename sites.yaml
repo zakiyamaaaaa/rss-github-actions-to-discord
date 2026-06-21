@@ -10,6 +10,14 @@ sites:
     name: Anthropic News
     url: https://raw.githubusercontent.com/taobojlen/anthropic-rss-feed/main/anthropic_news_rss.xml
 
+  - company: anthropic
+    name: Claude Blog (日本語)
+    type: page
+    url: https://claude.com/ja/blog
+    link_selector: a[href]
+    link_path_regex: ^/ja/blog/[^/?#]+/?$
+    notify_on_first_run: true
+
   - company: openai
     name: OpenAI News (日本語)
     type: page

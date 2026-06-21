@@ -21,6 +21,15 @@ SITES_FILE = ROOT / "sites.yaml"
 STATE_FILE = Path(os.environ.get("STATE_FILE", ROOT / ".state" / "last.json"))
 SCRIPT_VERSION = "seen-urls-v3"
 MAX_SEEN_URLS = 500
+GENERIC_LINK_TEXTS = {
+    "readmore",
+    "details",
+    "learnmore",
+    "more",
+    "詳細を読む",
+    "詳しく見る",
+    "もっと読む",
+}
 
 
 def webhook_env_key(company: str) -> str:
@@ -74,6 +83,14 @@ def load_sites() -> list[dict]:
     return sites
 
 
+def truthy(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return False
+
+
 def load_state() -> dict:
     if not STATE_FILE.exists():
         return {}
@@ -110,6 +127,17 @@ def entry_sort_key(entry) -> float:
     return 0.0
 
 
+def compact_text(text: str) -> str:
+    return re.sub(r"\s+", "", text).casefold()
+
+
+def is_generic_link_text(title: str) -> bool:
+    compact = compact_text(title)
+    if not compact:
+        return True
+    return any(compact == generic or compact == generic * 2 for generic in GENERIC_LINK_TEXTS)
+
+
 def list_rss_entries(feed_url: str) -> list[tuple[str, str]]:
     """戻り値: [(title, link), ...] 新しい順"""
     parsed = feedparser.parse(feed_url)
@@ -131,7 +159,12 @@ def list_rss_entries(feed_url: str) -> list[tuple[str, str]]:
     return entries
 
 
-def latest_entry_page(page_url: str) -> tuple[str, str]:
+def latest_entry_page(
+    page_url: str,
+    *,
+    link_selector: str | None = None,
+    link_path_regex: str | None = None,
+) -> tuple[str, str]:
     headers = {"User-Agent": "rss-github-actions-to-discord/1.0"}
     resp = requests.get(page_url, headers=headers, timeout=30)
     resp.raise_for_status()
@@ -143,15 +176,23 @@ def latest_entry_page(page_url: str) -> tuple[str, str]:
     if match:
         locale_prefix = f"/{match.group(1)}/"
 
+    path_pattern = re.compile(link_path_regex) if link_path_regex else None
+    selector = link_selector or 'a[href*="/index/"]'
+
     seen_hrefs: set[str] = set()
-    for anchor in soup.select('a[href*="/index/"]'):
+    for anchor in soup.select(selector):
         href = urljoin(page_url, anchor["href"])
         if href in seen_hrefs:
             continue
-        if locale_prefix and locale_prefix not in urlparse(href).path:
+        seen_hrefs.add(href)
+
+        href_path = urlparse(href).path
+        if path_pattern and not path_pattern.search(href_path):
+            continue
+        if not path_pattern and locale_prefix and locale_prefix not in href_path:
             continue
         title = re.sub(r"\s+", " ", anchor.get_text(strip=True))
-        if len(title) < 8:
+        if len(title) < 8 or is_generic_link_text(title):
             continue
         return title, href
 
@@ -217,14 +258,25 @@ def process_page_site(
     page_url: str,
     webhook_url: str,
     state: dict,
+    link_selector: str | None = None,
+    link_path_regex: str | None = None,
+    notify_on_first_run: bool = False,
 ) -> int:
-    title, link = latest_entry_page(page_url)
+    title, link = latest_entry_page(
+        page_url,
+        link_selector=link_selector,
+        link_path_regex=link_path_regex,
+    )
     normalized = normalize_url(link)
     seen = get_seen_urls(state, name)
 
     if not seen:
         seen.add(normalized)
         set_seen_urls(state, name, seen)
+        if notify_on_first_run:
+            print(f"  初回通知: {title}")
+            notify_discord(webhook_url, name, title, link)
+            return 1
         print(f"  初回: baseline 登録 ({normalized})")
         return 0
 
@@ -273,6 +325,9 @@ def main() -> None:
                 page_url=site["url"],
                 webhook_url=webhook_url,
                 state=state,
+                link_selector=site.get("link_selector"),
+                link_path_regex=site.get("link_path_regex"),
+                notify_on_first_run=truthy(site.get("notify_on_first_run")),
             )
         else:
             notifications += process_rss_site(

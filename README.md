@@ -39,6 +39,8 @@ Actions タブ → **Check site updates** → **Run workflow**
 
 初回実行は「最新記事を基準に保存」するだけで通知しません。2 回目以降で新着があれば Discord に届きます。
 
+ただし `sites.yaml` で `notify_on_first_run: true` を指定した監視対象は、初回にも最新記事を 1 件通知します。
+
 ## 監視サイトの追加
 
 `sites.yaml` に追記して commit してください。
@@ -55,6 +57,15 @@ sites:
     name: OpenAI News (日本語)
     type: page
     url: https://openai.com/ja-JP/news/
+
+# HTML 一覧のリンク条件を指定する例
+  - company: anthropic
+    name: Claude Blog (日本語)
+    type: page
+    url: https://claude.com/ja/blog
+    link_selector: a[href]
+    link_path_regex: ^/ja/blog/[^/?#]+/?$
+    notify_on_first_run: true
 ```
 
 別企業を追加する場合:

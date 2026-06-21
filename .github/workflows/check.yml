@@ -17,11 +17,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/cache@v5
+      - name: Restore state cache
+        uses: actions/cache/restore@v5
         with:
           path: .state
-          key: rss-github-actions-to-discord-state-v2
-          save-always: true
+          key: rss-github-actions-to-discord-state-${{ github.run_id }}
+          restore-keys: |
+            rss-github-actions-to-discord-state-
 
       - uses: actions/setup-python@v6
         with:
@@ -45,3 +47,10 @@ jobs:
         env:
           STATE_FILE: .state/last.json
         run: python scripts/check.py
+
+      - name: Save state cache
+        if: always() && hashFiles('.state/last.json') != ''
+        uses: actions/cache/save@v5
+        with:
+          path: .state
+          key: rss-github-actions-to-discord-state-${{ github.run_id }}
