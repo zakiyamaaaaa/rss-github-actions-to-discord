@@ -87,5 +87,5 @@ python scripts/check.py
 
 ## スケジュール
 
-- 毎日 **09:00 JST**（00:00 UTC）
+- 毎日 **06:00 JST**（21:00 UTC）
 - 変更する場合は `.github/workflows/check.yml` の `cron` を編集

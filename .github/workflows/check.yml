@@ -2,8 +2,8 @@ name: Check site updates
 
 on:
   schedule:
-    # 毎日 09:00 JST (00:00 UTC)
-    - cron: "0 0 * * *"
+    # 毎日 06:00 JST (21:00 UTC)
+    - cron: "0 21 * * *"
   workflow_dispatch:
 
 jobs:
