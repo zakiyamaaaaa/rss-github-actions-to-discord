@@ -60,11 +60,11 @@ sites:
 
 # HTML 一覧のリンク条件を指定する例
   - company: anthropic
-    name: Claude Blog (日本語)
+    name: Claude Blog
     type: page
-    url: https://claude.com/ja/blog
+    url: https://claude.com/blog
     link_selector: a[href]
-    link_path_regex: ^/ja/blog/[^/?#]+/?$
+    link_path_regex: ^/blog/[^/?#]+/?$
     notify_on_first_run: true
 ```
 
