@@ -19,8 +19,11 @@ from bs4 import BeautifulSoup
 ROOT = Path(__file__).resolve().parent.parent
 SITES_FILE = ROOT / "sites.yaml"
 STATE_FILE = Path(os.environ.get("STATE_FILE", ROOT / ".state" / "last.json"))
-SCRIPT_VERSION = "seen-urls-v3"
-MAX_SEEN_URLS = 500
+SCRIPT_VERSION = "seen-urls-v4"
+MAX_SEEN_URLS = 5000
+# 1 サイト 1 回あたりの最大通知数（溜まっていた場合は新しい順にこの件数だけ通知し、残りは既読扱い）
+MAX_NOTIFY_PER_SITE = 20
+DISCORD_POST_INTERVAL = 1.0
 GENERIC_LINK_TEXTS = {
     "readmore",
     "details",
@@ -210,7 +213,16 @@ def notify_discord(webhook_url: str, name: str, title: str, link: str) -> None:
             }
         ],
     }
-    resp = requests.post(webhook_url, json=payload, timeout=30)
+    for _ in range(5):
+        resp = requests.post(webhook_url, json=payload, timeout=30)
+        if resp.status_code == 429:
+            retry_after = float(resp.json().get("retry_after", 1.0))
+            print(f"  Discord rate limit: {retry_after}s 待機")
+            time.sleep(retry_after + 0.5)
+            continue
+        resp.raise_for_status()
+        time.sleep(DISCORD_POST_INTERVAL)
+        return
     resp.raise_for_status()
 
 
@@ -224,11 +236,16 @@ def process_rss_site(
     entries = list_rss_entries(feed_url)
     seen = get_seen_urls(state, name)
     notifications = 0
+    feed_urls = {normalize_url(link) for _, link in entries}
+
+    def save() -> None:
+        # フィードから消えた URL は二度と新着にならないので捨てる。
+        # （件数上限で切ると、フィードが上限より大きい場合に毎回同じ記事が「新着」扱いになる）
+        set_seen_urls(state, name, seen & feed_urls)
 
     if not seen:
-        for _, link in entries:
-            seen.add(normalize_url(link))
-        set_seen_urls(state, name, seen)
+        seen.update(feed_urls)
+        save()
         print(f"  初回: フィード内 {len(seen)} 件を baseline 登録（通知なし）")
         return 0
 
@@ -242,13 +259,22 @@ def process_rss_site(
         print(f"  変更なし (seen={len(seen)})")
         return 0
 
-    for title, link in reversed(new_entries):
-        print(f"  新着: {title}")
-        notify_discord(webhook_url, name, title, link)
-        seen.add(normalize_url(link))
-        notifications += 1
+    skipped = new_entries[MAX_NOTIFY_PER_SITE:]
+    if skipped:
+        print(f"  新着 {len(new_entries)} 件のうち古い {len(skipped)} 件は通知せず既読扱い")
+        for _, link in skipped:
+            seen.add(normalize_url(link))
+        save()
 
-    set_seen_urls(state, name, seen)
+    try:
+        for title, link in reversed(new_entries[:MAX_NOTIFY_PER_SITE]):
+            print(f"  新着: {title}")
+            notify_discord(webhook_url, name, title, link)
+            seen.add(normalize_url(link))
+            notifications += 1
+    finally:
+        # 途中で失敗しても、通知済みの分は保存して重複通知を防ぐ
+        save()
     return notifications
 
 
@@ -311,6 +337,7 @@ def main() -> None:
         print("restored state: (empty)")
 
     notifications = 0
+    failures: list[str] = []
 
     for site in sites:
         company = site["company"]
@@ -319,27 +346,37 @@ def main() -> None:
         webhook_url = webhooks[company]
         print(f"Checking: [{company}] {name} ({site_type})")
 
-        if site_type == "page":
-            notifications += process_page_site(
-                name=name,
-                page_url=site["url"],
-                webhook_url=webhook_url,
-                state=state,
-                link_selector=site.get("link_selector"),
-                link_path_regex=site.get("link_path_regex"),
-                notify_on_first_run=truthy(site.get("notify_on_first_run")),
-            )
-        else:
-            notifications += process_rss_site(
-                name=name,
-                feed_url=site["url"],
-                webhook_url=webhook_url,
-                state=state,
-            )
+        # 1 サイトの失敗で他サイトの処理・state 保存が止まらないようにする
+        try:
+            if site_type == "page":
+                notifications += process_page_site(
+                    name=name,
+                    page_url=site["url"],
+                    webhook_url=webhook_url,
+                    state=state,
+                    link_selector=site.get("link_selector"),
+                    link_path_regex=site.get("link_path_regex"),
+                    notify_on_first_run=truthy(site.get("notify_on_first_run")),
+                )
+            else:
+                notifications += process_rss_site(
+                    name=name,
+                    feed_url=site["url"],
+                    webhook_url=webhook_url,
+                    state=state,
+                )
+        except Exception as e:  # noqa: BLE001
+            print(f"  エラー: {type(e).__name__}: {e}", file=sys.stderr)
+            print(f"::error title=check failed::[{company}] {name}: {e}")
+            failures.append(name)
 
     save_state(state)
     print(f"state saved: {STATE_FILE}")
     print(f"完了: {notifications} 件通知")
+
+    if failures:
+        print(f"失敗したサイト: {', '.join(failures)}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

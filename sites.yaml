@@ -18,7 +18,7 @@ sites:
     link_path_regex: ^/ja/blog/[^/?#]+/?$
     notify_on_first_run: true
 
+  # HTML 一覧ページの構造変更で記事リンクが取れなくなったため、公式 RSS に切り替え
   - company: openai
-    name: OpenAI News (日本語)
-    type: page
-    url: https://openai.com/ja-JP/news/
+    name: OpenAI News (日本語 RSS)
+    url: https://openai.com/ja-JP/news/rss.xml

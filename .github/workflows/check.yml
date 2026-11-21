@@ -6,6 +6,10 @@ on:
     - cron: "0 21 * * *"
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: write # keepalive（ワークフロー再有効化 API）用
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -54,3 +58,11 @@ jobs:
         with:
           path: .state
           key: rss-github-actions-to-discord-state-${{ github.run_id }}
+
+      # 60 日間コミットがないと schedule が自動無効化されるため、毎回 enable API を叩いて
+      # 非アクティブ判定のタイマーをリセットする
+      - name: Keepalive (prevent inactivity disable)
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/check.yml/enable"
