@@ -162,15 +162,21 @@ def list_rss_entries(feed_url: str) -> list[tuple[str, str]]:
     return entries
 
 
-def latest_entry_page(
+def list_page_entries(
     page_url: str,
     *,
     link_selector: str | None = None,
     link_path_regex: str | None = None,
-) -> tuple[str, str]:
+) -> list[tuple[str, str]]:
+    """一覧ページ上の記事リンクをページ内の出現順で返す。[(title, link), ...]
+
+    ピン留め（featured）記事が先頭に来るページもあるため、先頭 1 件ではなく全件を返す。
+    """
     headers = {"User-Agent": "rss-github-actions-to-discord/1.0"}
     resp = requests.get(page_url, headers=headers, timeout=30)
     resp.raise_for_status()
+    if urlparse(resp.url).path.rstrip("/") != urlparse(page_url).path.rstrip("/"):
+        print(f"  注意: {page_url} は {resp.url} にリダイレクトされました（sites.yaml の URL 更新を検討）")
 
     soup = BeautifulSoup(resp.text, "html.parser")
     locale_prefix = ""
@@ -182,24 +188,30 @@ def latest_entry_page(
     path_pattern = re.compile(link_path_regex) if link_path_regex else None
     selector = link_selector or 'a[href*="/index/"]'
 
+    entries: list[tuple[str, str]] = []
     seen_hrefs: set[str] = set()
     for anchor in soup.select(selector):
         href = urljoin(page_url, anchor["href"])
-        if href in seen_hrefs:
+        if normalize_url(href) in seen_hrefs:
             continue
-        seen_hrefs.add(href)
 
         href_path = urlparse(href).path
         if path_pattern and not path_pattern.search(href_path):
             continue
         if not path_pattern and locale_prefix and locale_prefix not in href_path:
             continue
-        title = re.sub(r"\s+", " ", anchor.get_text(strip=True))
+        # カード型リンクは見出し要素があればそれをタイトルにする
+        heading = anchor.find(["h1", "h2", "h3", "h4"])
+        source = heading if heading else anchor
+        title = re.sub(r"\s+", " ", source.get_text(" ", strip=True))
         if len(title) < 8 or is_generic_link_text(title):
             continue
-        return title, href
+        seen_hrefs.add(normalize_url(href))
+        entries.append((title, href))
 
-    raise RuntimeError(f"記事リンクを取得できません: {page_url}")
+    if not entries:
+        raise RuntimeError(f"記事リンクを取得できません: {page_url}")
+    return entries
 
 
 def notify_discord(webhook_url: str, name: str, title: str, link: str) -> None:
@@ -226,27 +238,37 @@ def notify_discord(webhook_url: str, name: str, title: str, link: str) -> None:
     resp.raise_for_status()
 
 
-def process_rss_site(
+def process_entries(
     *,
     name: str,
-    feed_url: str,
+    entries: list[tuple[str, str]],
     webhook_url: str,
     state: dict,
+    prune_to_entries: bool,
+    notify_on_first_run: bool = False,
 ) -> int:
-    entries = list_rss_entries(feed_url)
+    """entries（新しい順）のうち未読のものを Discord に通知し、state を更新する。"""
     seen = get_seen_urls(state, name)
     notifications = 0
-    feed_urls = {normalize_url(link) for _, link in entries}
+    entry_urls = {normalize_url(link) for _, link in entries}
 
     def save() -> None:
-        # フィードから消えた URL は二度と新着にならないので捨てる。
-        # （件数上限で切ると、フィードが上限より大きい場合に毎回同じ記事が「新着」扱いになる）
-        set_seen_urls(state, name, seen & feed_urls)
+        if prune_to_entries:
+            # RSS: フィードから消えた URL は二度と新着にならないので捨てる。
+            # （件数上限で切ると、フィードが上限より大きい場合に毎回同じ記事が「新着」扱いになる）
+            set_seen_urls(state, name, seen & entry_urls)
+        else:
+            set_seen_urls(state, name, seen)
 
     if not seen:
-        seen.update(feed_urls)
+        seen.update(entry_urls)
         save()
-        print(f"  初回: フィード内 {len(seen)} 件を baseline 登録（通知なし）")
+        if notify_on_first_run:
+            title, link = entries[0]
+            print(f"  初回通知: {title}")
+            notify_discord(webhook_url, name, title, link)
+            return 1
+        print(f"  初回: {len(seen)} 件を baseline 登録（通知なし）")
         return 0
 
     new_entries = [
@@ -278,6 +300,22 @@ def process_rss_site(
     return notifications
 
 
+def process_rss_site(
+    *,
+    name: str,
+    feed_url: str,
+    webhook_url: str,
+    state: dict,
+) -> int:
+    return process_entries(
+        name=name,
+        entries=list_rss_entries(feed_url),
+        webhook_url=webhook_url,
+        state=state,
+        prune_to_entries=True,
+    )
+
+
 def process_page_site(
     *,
     name: str,
@@ -288,33 +326,20 @@ def process_page_site(
     link_path_regex: str | None = None,
     notify_on_first_run: bool = False,
 ) -> int:
-    title, link = latest_entry_page(
+    entries = list_page_entries(
         page_url,
         link_selector=link_selector,
         link_path_regex=link_path_regex,
     )
-    normalized = normalize_url(link)
-    seen = get_seen_urls(state, name)
-
-    if not seen:
-        seen.add(normalized)
-        set_seen_urls(state, name, seen)
-        if notify_on_first_run:
-            print(f"  初回通知: {title}")
-            notify_discord(webhook_url, name, title, link)
-            return 1
-        print(f"  初回: baseline 登録 ({normalized})")
-        return 0
-
-    if normalized in seen:
-        print(f"  変更なし (seen={len(seen)})")
-        return 0
-
-    print(f"  新着: {title}")
-    notify_discord(webhook_url, name, title, link)
-    seen.add(normalized)
-    set_seen_urls(state, name, seen)
-    return 1
+    # 一覧ページは並び替え・ピン留めで記事が出入りするので、既読は捨てずに保持する
+    return process_entries(
+        name=name,
+        entries=entries,
+        webhook_url=webhook_url,
+        state=state,
+        prune_to_entries=False,
+        notify_on_first_run=notify_on_first_run,
+    )
 
 
 def main() -> None:

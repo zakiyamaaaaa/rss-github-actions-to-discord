@@ -10,13 +10,13 @@ sites:
     name: Anthropic News
     url: https://raw.githubusercontent.com/taobojlen/anthropic-rss-feed/main/anthropic_news_rss.xml
 
+  # /ja/blog は /ja/resources/articles にリダイレクトされるようになった
   - company: anthropic
     name: Claude Blog (日本語)
     type: page
-    url: https://claude.com/ja/blog
+    url: https://claude.com/ja/resources/articles
     link_selector: a[href]
-    link_path_regex: ^/ja/blog/[^/?#]+/?$
-    notify_on_first_run: true
+    link_path_regex: ^/ja/resources/articles/[^/?#]+/?$
 
   # HTML 一覧ページの構造変更で記事リンクが取れなくなったため、公式 RSS に切り替え
   - company: openai
